@@ -1,0 +1,89 @@
+
+URxvt.background: #000000
+URxvt.foreground: #FFFFFF
+
+URxvt.font:xft:Inconsolata:size=12:antialias=true,\
+            xft:wqy-zenhei:size=12:antialias=true
+
+
+! Scrollbar config
+URxvt.scrollBar: false
+URxvt.scrollBar_right: false
+URxvt.scrollBar_floating: false
+URxvt.scrollstyle: rxvt
+
+! do not scroll with output
+URxvt*scrollTtyOutput: false
+
+! scroll in relation to buffer (with mouse scroll or Shift+Page Up)
+URxvt*scrollWithBuffer: true
+
+! scroll back to the bottom on keypress
+URxvt*scrollTtyKeypress: true
+
+! ibus support
+URxvt.inputMethod: ibus
+URxvt.preeditType: OverTheSpot
+Urxvt.imLocale:zh_CN.utf8
+
+! tab support
+URxvt.perl-ext-common: ...,tabbed,...
+URxvt.tabbed.tabbar-fg:8
+URxvt.tabbed.tabbar-bg:0
+URxvt.tabbed.tab-fg:3
+URxvt.tabbed.tab-bg:0
+
+!================================
+! Colors from Arch wiki
+!================================
+
+! Black + DarkGrey
+*color0:  #000000
+*color8:  #555753
+! DarkRed + Red
+*color1:  #ff6565
+*color9:  #ff8d8d
+! DarkGreen + Green
+*color2:  #93d44f
+*color10: #c8e7a8
+! DarkYellow + Yellow
+*color3:  #eab93d
+*color11: #ffc123
+! DarkBlue + Blue
+*color4:  #204a87
+*color12: #3465a4
+! DarkMagenta + Magenta
+*color5:  #ce5c00
+*color13: #f57900
+!DarkCyan + Cyan (both not tango)
+*color6:  #89b6e2
+*color14: #46a4ff
+! LightGrey + White
+*color7:  #cccccc
+*color15: #ffffff
+
+!================================
+! tango theme
+!================================
+
+*background:              #000000
+*foreground:              #babdb6
+!*color0:                  #2e3436
+!*color1:                  #cc0000
+!*color2:                  #4e9a06
+!*color3:                  #c4a000
+!*color4:                  #3465a4
+!*color5:                  #75507b
+!*color6:                  #06989a
+!*color7:                  #d3d7cf
+!*color8:                  #555753
+!*color9:                  #ef2929
+!*color10:                 #8ae234
+!*color11:                 #fce94f
+!*color12:                 #729fcf
+!*color13:                 #ad7fa8
+!*color14:                 #34e2e2
+!*color15:                 #eeeeec
+
+! vim: ai:si:et:ts=4:sw=4:ft=xdefaults:
+

@@ -1,0 +1,9 @@
+bashpodder.sh
+bp.conf
+parse_enclosure
+podcast.log
+temp.log
+wget-log
+wget-log.1
+parse_enclosure.xsl
+    

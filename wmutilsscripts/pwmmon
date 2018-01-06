@@ -1,0 +1,369 @@
+#!/usr/bin/env perl
+#
+# A simple Linux status monitor on X11.
+# Copyright (c) 2010-2016, Hiroyuki Ohsaki.
+# All rights reserved.
+#
+# $Id: pwmmon,v 2.21 2016/11/15 12:44:09 ohsaki Exp ohsaki $
+#
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+use List::Util qw(max min);
+use POSIX qw(strftime);
+use Smart::Comments;
+use Time::HiRes qw(time sleep);
+use X11::Protocol;
+use X11::Xlib;
+use diagnostics;
+use strict;
+use warnings;
+
+my $FONT_NAME
+    = '-hiro-fixed-medium-r-normal--8-80-75-75-c-80-iso646.1991-irv';
+# FIXME: font size should not be hard-coded
+my $FONT_WIDTH  = 8;
+my $FONT_HEIGHT = 8;
+
+# definition of text colors; each pair is the remaining battery
+# percentage and the color name
+my %COLOR_AT = (
+    100 => 'SteelBlue1',
+    75  => 'PaleGreen',
+    50  => 'LightGoldenrod',
+    25  => 'chocolate1',
+    0   => 'black',
+);
+
+my %UNIT_TBL = (
+    0 => ' ',
+    1 => 'K',
+    2 => 'M',
+    3 => 'G',
+    4 => 'T',
+    5 => 'P'
+);
+
+my %last_stat = (
+    time     => time(),
+    tx_bytes => 0,
+    rx_bytes => 0,
+    tx_rate  => 0,
+    rx_rate  => 0
+);
+
+sub convert_sec2hm {
+    my ($sec) = @_;
+
+    my $hour = $sec / 3_600;
+    my $min  = ( $sec / 60 ) % 60;
+    if ( $hour > 99 ) {
+        ( $hour, $min ) = ( 99, 99 );
+    }
+    return ( $hour, $min );
+}
+
+# calcurate the moving average of sending/receiving rate when BYTES
+# bytes are processed in the last DELTA seconds when the last averate
+# rate is LAST_RATE.
+sub get_average_rate {
+    my ( $bytes, $delta, $last_rate ) = @_;
+
+    return 0 if ( $bytes < 0 );
+    return ( 0.95 * $last_rate + 0.05 * ( $bytes * 8 / $delta ) / $delta );
+}
+
+# convert a numeric value RATE to a human-friendly string
+sub format_rate {
+    my ($rate) = @_;
+
+    my $unit = 0;
+    while ( $rate > 100 ) {
+        $rate /= 1_000;
+        $unit++;
+    }
+    return ( $rate, $UNIT_TBL{$unit} );
+}
+
+# read FILE and return the COLUMN-th field.  If REGEXP is specified,
+# lines not matching REGEXP are ignored.  If COLUMN is not specified,
+# return the first field.
+sub read_value {
+    my ( $file, $regexp, $column ) = @_;
+
+    $column //= 0;
+    open my $fh, '<', $file or return 0;
+    while (<$fh>) {
+        chomp;
+        next if ( defined $regexp and !/$regexp/ );
+        my @fields = split /\s+/, $_;
+        return $fields[$column];
+    }
+    return;
+}
+
+# return color name according to the remaining battery capacity
+sub pick_color {
+    my ($str) = @_;
+
+    my ( $ac_status, $level ) = ( '_', 0 );
+    if ( $str =~ /PW([*_])\s*(\d+)%/ ) {
+        ( $ac_status, $level ) = ( $1, $2 );
+    }
+    my ( $color, $reverse ) = ( $COLOR_AT{100}, 0 );
+    if ( $ac_status ne '*' ) {
+        for my $p ( sort { $b <=> $a } keys %COLOR_AT ) {
+            $color = $COLOR_AT{$p} if ( $level <= $p );
+        }
+        if ( ( $level <= 3 ) and ( time() & 1 ) ) {
+            $reverse = 1;
+        }
+    }
+    return ( $color, $reverse );
+}
+#----------------------------------------------------------------
+sub get_wifistat_str {
+    my ($iface) = @_;
+
+    my ( $essid, $rate, $quality, $level ) = qw(-------- 0 --/-- 0);
+    if ( -d "/sys/class/net/$iface" ) {
+        open my $fh, '-|', "iwconfig $iface" or die "$iface: iwconfig: $!\n";
+        while (<$fh>) {
+            chomp;
+            $essid   = $1 if /ESSID:"(.+?)"/;
+            $rate    = $1 if /Bit Rate=([\d.]+)/;
+            $quality = $1 if /Link Quality=(\S+)/;
+            $level   = $1 if /Signal level=(\S+)/;
+        }
+        close $fh;
+    }
+    return sprintf '%5s%s %-8s %4.1fM %-5s %5.1fdBm', $iface,
+        ( `pidof wpa_supplicant` ? '*' : ' ' ),
+        $essid, $rate, $quality, $level;
+}
+
+sub get_netstat_str {
+    my ($iface) = @_;
+
+    my ( $addr, $rx_bytes, $tx_bytes ) = qw(---.---.---.--- 0 0);
+    if ( -d "/sys/class/net/$iface" ) {
+        open my $fh, '-|', "ifconfig $iface" or die "$iface: ifconfig: $!\n";
+        while (<$fh>) {
+            chomp;
+            $addr     = $1 if /inet addr:([\d.]+)/;
+            $tx_bytes = $1 if /TX bytes:(\d+)/;
+            $rx_bytes = $1 if /RX bytes:(\d+)/;
+        }
+        close $fh;
+    }
+
+    my $elapsed = $last_stat{time} - time();
+    $last_stat{time} = time();
+
+    my $tx_rate = get_average_rate( $tx_bytes - $last_stat{tx_bytes},
+        $elapsed, $last_stat{tx_rate} );
+    $last_stat{tx_bytes} = $tx_bytes;
+    $last_stat{tx_rate}  = $tx_rate;
+
+    my $rx_rate = get_average_rate( $rx_bytes - $last_stat{rx_bytes},
+        $elapsed, $last_stat{rx_rate} );
+    $last_stat{rx_bytes} = $rx_bytes;
+    $last_stat{rx_rate}  = $rx_rate;
+
+    return sprintf "%-5s %-15s TX%5.2f%s RX%5.2f%s", ( $iface // '-----' ),
+        $addr,
+        format_rate($tx_rate),
+        format_rate($rx_rate);
+}
+
+sub get_battery_str {
+    my $ac_online = read_value('/sys/class/power_supply/AC/online');
+    # assume AC power if battery status is not available
+    $ac_online = 1 unless ( -d '/sys/class/power_supply/AC' );
+    my ( $energy_full, $energy_now, $power_now );
+    for my $battery (qw(BAT0 BAT1)) {
+        $energy_full
+            += read_value("/sys/class/power_supply/$battery/energy_full");
+        $energy_now
+            += read_value("/sys/class/power_supply/$battery/energy_now");
+        $power_now
+            += read_value("/sys/class/power_supply/$battery/power_now");
+    }
+    return sprintf "PW%s%3d%% %02d:%02d %5.2fW",
+        ( $ac_online ? '*' : '_' ),
+        $energy_now / max( $energy_full, 1e-10 ) * 100,
+        convert_sec2hm( $energy_now * 3_600 / max( $power_now, 1e-10 ) ),
+        $power_now / 1_000_000;
+}
+
+sub get_cpustat_str {
+    my $loadavg = read_value('/proc/loadavg');
+    my $cpufreq = read_value( '/proc/cpuinfo', qr/MHz/, 3 );
+    return sprintf 'CPU%3d%% %3.1fGHz', $loadavg * 100, $cpufreq / 1_000;
+}
+
+sub get_display_str {
+    my ( $screen, $xsize, $ysize );
+    open my $fh, '-|', 'xrandr --current' or die "xrandr: $!\n";
+    while (<$fh>) {
+        chomp;
+        ( $screen, $xsize, $ysize ) = ( $1, $2, $3 )
+            if /^(\w+) connected (\d+)x(\d+)/;
+    }
+    close $fh;
+    return sprintf '%s %dx%d', $screen, $xsize, $ysize;
+}
+
+sub get_time_str {
+    my $time = strftime( '%Y/%m/%d(%a) %H:%M:%S', localtime( time() ) );
+    if ( `zdump /usr/share/zoneinfo/US/Eastern` =~ /(\d\d:\d\d:\d\d)/ ) {
+        my $second_time = $1;
+        return "[$second_time] $time";
+    }
+    else {
+        return $time;
+    }
+}
+
+sub compose_status_str {
+    my ($width) = @_;
+
+    my $iface;
+    for (qw(wlan0 eth0 eth1 eth2)) {
+        if ( -d "/sys/class/net/$_" ) {
+            $iface = $_;
+            last;
+        }
+    }
+
+    my $wifistat_str = get_wifistat_str('wlan0');
+    my $netstat_str  = get_netstat_str($iface);
+    my $battery_str  = get_battery_str();
+    my $cpustat_str  = get_cpustat_str();
+    my $display_str  = get_display_str();
+    my $time_str     = get_time_str();
+    return join( '|', $wifistat_str, $battery_str, $time_str )
+        if ( $width <= 800 );
+    return join( ' | ',
+        $wifistat_str, $netstat_str, $battery_str,
+        $cpustat_str,  $display_str, $time_str );
+}
+# ----------------------------------------------------------------
+# create a graphics context with specified FONT and COLOR.
+sub create_GC {
+    my ( $x, $win, $font, $color ) = @_;
+
+    my $colormap = $x->default_colormap();
+    my ( $pixel, @rest ) = $x->AllocNamedColor( $colormap, $color );
+    my $gc = $x->new_rsrc();
+    $x->CreateGC(
+        $gc, $win,
+        'font'       => $font,
+        'foreground' => $pixel,
+    );
+    return $gc;
+}
+
+# draw a string STR at the position (X, Y) with graphics context GC
+sub display_text_at {
+    my ( $x, $win, $xpos, $ypos, $gc_ref, $color, $str, $reverse ) = @_;
+
+    my %geom = $x->GetGeometry($win);
+    $x->ClearArea( $win, ( $xpos, $ypos ), $geom{width} - $xpos, $FONT_HEIGHT, 0 );
+    if ($reverse) {
+	my $width = min( $FONT_WIDTH * length($str), $geom{width} );
+        $x->PolyFillRectangle( $win, $gc_ref->{$color},
+            [ ( $xpos, $ypos ), $width, $FONT_HEIGHT ] );
+        $x->PolyText8(
+            $win, $gc_ref->{black},
+            ( $xpos, $ypos + $FONT_HEIGHT - 1 ),
+            [ 0, $str ]
+        );
+    }
+    else {
+        $x->PolyText8(
+            $win, $gc_ref->{$color},
+            ( $xpos, $ypos + $FONT_HEIGHT - 1 ),
+            [ 0, $str ]
+        );
+    }
+}
+# ----------------------------------------------------------------
+my $x = X11::Protocol->new();
+$x->event_handler('queue');
+
+my $win = $x->new_rsrc();
+my ( $width, $height ) = ( $x->width_in_pixels(), $FONT_HEIGHT );
+$x->CreateWindow(
+    $win,             $x->root(), 'InputOutput',
+    $x->root_depth(), 'CopyFromParent',
+    ( 0, 0 ), $width, $height, 0,
+    'background_pixel' => $x->black_pixel(),
+    override_redirect  => 1,
+    'event_mask'       => $x->pack_event_mask('Exposure')
+);
+$x->MapWindow($win);
+
+my $font = $x->new_rsrc();
+$x->OpenFont( $font, $FONT_NAME );
+
+my %gc;
+for my $color ( values %COLOR_AT ) {
+    $gc{$color} = create_GC( $x, $win, $font, $color );
+}
+
+while (1) {
+    next if `pidof mplayer ffplay`;
+    my $str = compose_status_str($win);
+    my ( $color, $reverse ) = pick_color($str);
+    my $xpos = ( $width - $FONT_WIDTH * length($str) ) / 2;
+    display_text_at( $x, $win, $xpos, 0, \%gc, $color, $str, $reverse );
+    $x->ConfigureWindow( $win, stack_mode => 'Above' );
+    sleep(1);
+}
+
+__END__
+
+=head1 NAME
+
+pwmmon - A simple Linux status monitor on X11.
+
+=head1 SYNOPSIS
+
+pwmmon
+
+=head1 DESCRIPTION
+
+TBD
+
+=head1 OPTIONS
+
+None
+
+=head1 AVAILABILITY
+
+The latest version of B<pwmmon> is available at
+
+http://www.lsnl.jp/~ohsaki/software/pwmmon/pwmmon
+
+=head1 SEE ALSO
+
+X11::Protocol(5), X11::Keysyms(5), twm(1), perlwm(1), pwm(1), pwmlog(1)
+
+=head1 AUTHOR
+
+Hiroyuki Ohsaki <ohsaki[atmark]lsnl.jp>
+
+=cut

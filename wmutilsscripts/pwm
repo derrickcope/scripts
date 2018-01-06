@@ -1,0 +1,1380 @@
+#!/usr/bin/env perl
+#
+# A simple but extensible X11 window manager written in Perl.
+# Copyright (c) 2010-2016, Hiroyuki Ohsaki.
+# All rights reserved.
+#
+# $Id: pwm,v 2.32 2016/11/14 14:18:14 ohsaki Exp ohsaki $
+#
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+package WindowManager;
+
+use Carp;
+use List::Util qw(max min);
+use List::MoreUtils qw(first_index true any);
+use Smart::Comments;
+use X11::Protocol;
+use X11::Protocol::Constants
+    qw(Asynchronous ButtonPressMask ButtonReleaseMask ClientMessage ControlMask
+    EnterWindowMask ExposureMask FocusChangeMask GrabModeAsync LeaveWindowMask
+    Mod1Mask None PointerMotionMask PointerRoot RevertToParent ShiftMask
+    StructureNotifyMask SubstructureNotifyMask SubstructureRedirectMask True
+    VisibilityChangeMask );
+use X11::Xlib;
+use diagnostics;
+use strict;
+use warnings;
+use Class::Accessor::Lite (
+    rw => [
+        qw(x managed_in_ref exposed_in_ref focused_window last_raised_window
+            start_event_ref start_geom_ref last_x last_y vscreen title title_gc
+            frame_l frame_r frame_u frame_d debug_level)
+    ]
+);
+
+our $VERSION = '1.1';
+my $FRAME_WIDTH  = 2;
+my $FRAME_COLOR  = 'PaleGreen';
+my $TITLE_WIDTH  = 96;
+my $TITLE_HEIGHT = 10;
+my $TITLE_FONT
+    = '-hiro-fixed-medium-r-normal--8-80-75-75-c-80-iso646.1991-irv';
+my $TITLE_COLOR    = 'PaleGreen3';
+my $STAT_HEIGHT    = 8;
+my $PNT_OFFSET     = 16;
+my $MOVE_THRESHOLD = 16;
+my $MIN_VSCREEN    = 1;
+my $MAX_VSCREEN    = 4;
+my $BOUNCE_RATIO   = 1 / 8;
+
+# FIXME: alt-ctrl-1 changes focus to rxvt if it already exists
+my %KEYBOARD_HANDLER_FOR = (
+    i => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            $_[0]->focus_next_window( $_[1]->{child} );
+        },
+    },
+    m => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            $_[0]->raise_or_lower_window( $_[1]->{child} )
+                unless ( $_[1]->{child} eq 'None' );
+        },
+    },
+    apostrophe => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            $_[0]->maximize_window( $_[1]->{child}, max_w => 1, max_h => 1 )
+                unless ( $_[1]->{child} eq 'None' );
+        },
+    },
+    semicolon => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            $_[0]->maximize_window( $_[1]->{child}, max_h => 1 )
+                unless ( $_[1]->{child} eq 'None' );
+        },
+    },
+    comma => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            shift->layout_all_windows;
+        },
+    },
+    period => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            shift->tile_all_windows;
+        },
+    },
+    z => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            $_[0]->x->DestroyWindow( $_[1]->{child} )
+                unless ( $_[1]->{child} eq 'None' );
+        },
+    },
+    1 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system '(unset STY; rxvt) &';
+        },
+    },
+    2 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'pidof emacs || emacs &';
+        },
+    },
+    3 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'pidof chrome || chromium &';
+        },
+    },
+    6 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'ssh -f raccoon krxvt &';
+        },
+    },
+    7 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'ssh -f fox.lsnl.jp krxvt &';
+        },
+    },
+    8 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'ssh -f fox krxvt &';
+        },
+    },
+    9 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'ssh -f ferret krxvt &';
+        },
+    },
+    0 => {
+        modifier => Mod1Mask | ControlMask,
+        callback => sub {
+            system 'ssh -f lesser krxvt &';
+        },
+    },
+    F1 => {
+        modifier => Mod1Mask,
+        callback => sub {
+            $_[0]->select_vscreen(1);
+        },
+    },
+    F2 => {
+        modifier => Mod1Mask,
+        callback => sub {
+            $_[0]->select_vscreen(2);
+        },
+    },
+    F3 => {
+        modifier => Mod1Mask,
+        callback => sub {
+            $_[0]->select_vscreen(3);
+        },
+    },
+    F4 => {
+        modifier => Mod1Mask,
+        callback => sub {
+            $_[0]->select_vscreen(4);
+        },
+    },
+    F5 => {
+        modifier => ShiftMask,
+        callback => sub {
+            system
+                '(sudo config-wireless stop; sudo config-wireless start) &';
+        },
+    },
+    F6 => {
+        modifier => ShiftMask,
+        callback => sub {
+            system '(sudo config-wireless stop) &';
+        },
+    },
+    F7 => {
+        modifier => ShiftMask,
+        callback => sub {
+            system 'xrandr --output DP1 --mode 800x600 --rate 60';
+        },
+    },
+    F8 => {
+        modifier => ShiftMask,
+        callback => sub {
+            system 'xcalib -i -alter';
+        },
+    },
+    F9 => {
+        modifier => ShiftMask,
+        callback => sub {
+            system <<EOF;
+if pidof mpg123; then
+    skill mpg123
+else
+    (mpg123 --shuffle --list "$ENV{HOME}/.mp3-playlist") &
+fi
+EOF
+        },
+    },
+    XF86XK_AudioRaiseVolume => {
+        modifier => None,
+        callback => sub {
+            my $level = _get_mixer_level();
+            $level = min( $level + 10, 100 );
+            _set_mixer_level($level);
+        },
+    },
+    XF86XK_AudioLowerVolume => {
+        modifier => None,
+        callback => sub {
+            my $level = _get_mixer_level();
+            $level = max( $level - 10, 0 );
+            _set_mixer_level($level);
+        },
+    },
+);
+
+my $LAYOUT_OFFSET    = 0.03;
+my %LAYOUT_RULES_FOR = (
+    'xterm|rxvt' => {
+        x => 0.5,
+        y => 0.3,
+        w => 0.5,
+        h => 0.7
+    },
+    'emacs' => {
+        x => 0,
+        y => 0,
+        w => 0.5 - $LAYOUT_OFFSET,
+        h => 1
+    },
+    'firefox|iceweasel|chrom(e|ium)|midori' => {
+        x => 0.5 - $LAYOUT_OFFSET,
+        y => 0,
+        w => 0.5 + $LAYOUT_OFFSET,
+        h => 1
+    },
+    '(open|libre)office|acroread|xpdf|xdvi|tgif|xmathematica|perl' => {
+        x => 0.5 - $LAYOUT_OFFSET,
+        y => 0,
+        w => 0.5 + $LAYOUT_OFFSET,
+        h => 1
+    },
+    'xvroot' => {
+        x => 0.5 - $LAYOUT_OFFSET,
+        y => 0.0,
+    },
+    'xvschnauze' => {
+        x => 0.5 - $LAYOUT_OFFSET,
+        y => 0.5,
+        w => 0.5 + $LAYOUT_OFFSET,
+        h => 0.5
+    },
+);
+
+my @XTERM_GEOMETRIES = (
+    { x => 0.5, y => 0.5, w => 0.5, h => 0.5 },
+    { x => 0.5, y => 0,   w => 0.5, h => 0.5 },
+    { x => 0,   y => 0.5, w => 0.5, h => 0.5 },
+    { x => 0,   y => 0,   w => 0.5, h => 0.5 }
+);
+
+my %TILE_COUNTS_FOR = (
+    1  => [ 1, 1 ],
+    2  => [ 2, 1 ],
+    3  => [ 2, 2 ],
+    4  => [ 2, 2 ],
+    5  => [ 3, 2 ],
+    6  => [ 3, 2 ],
+    7  => [ 3, 3 ],
+    8  => [ 3, 3 ],
+    9  => [ 3, 3 ],
+    10 => [ 4, 3 ],
+    11 => [ 4, 3 ],
+    12 => [ 4, 3 ],
+    13 => [ 4, 4 ],
+    14 => [ 4, 4 ],
+    15 => [ 4, 4 ],
+    16 => [ 4, 4 ],
+    17 => [ 5, 4 ],
+    18 => [ 5, 4 ],
+    19 => [ 5, 4 ],
+    20 => [ 5, 4 ],
+    21 => [ 5, 5 ],
+    22 => [ 5, 5 ],
+    23 => [ 5, 5 ],
+    24 => [ 5, 5 ],
+    25 => [ 5, 5 ],
+    26 => [ 6, 5 ],
+    27 => [ 6, 5 ],
+    28 => [ 6, 5 ],
+    29 => [ 6, 5 ],
+    30 => [ 6, 5 ],
+);
+
+sub new {
+    my ( $class, $opts_ref ) = @_;
+
+    my $x = X11::Protocol->new();
+    $x->event_handler('queue');
+    $x->{error_handler} = \&error_handler;
+    $opts_ref = {} unless ( defined $opts_ref );
+    my $self = {
+        x              => $x,
+        managed_in_ref => {},
+        exposed_in_ref => {},
+        focused_window => undef,
+        vscreen        => 1,
+        %{$opts_ref},
+    };
+    bless $self, $class;
+    return $self;
+}
+
+sub configure_root_event_mask {
+    my ($self) = @_;
+
+    $self->configure_window_event_mask( $self->x->root(),
+        SubstructureRedirectMask | SubstructureNotifyMask | EnterWindowMask
+            | LeaveWindowMask | FocusChangeMask );
+}
+
+sub _get_mixer_level {
+    if ( `amixer get Master` =~ /Playback.*\[(\d+)%\]/ ) {
+        return $1;
+    }
+    return undef;
+}
+
+sub _set_mixer_level {
+    my $level = shift;
+
+    system "amixer set Master $level%";
+}
+
+my %SYM_TO_KEYCODE_FOR = (
+    XF86XK_AudioLowerVolume => 0x1008FF11,
+    XF86XK_AudioRaiseVolume => 0x1008FF13,
+);
+
+sub configure_keyboard_grab {
+    my ($self) = @_;
+
+    my $display = X11::Xlib->new();
+    my $win     = $self->x->root();
+    for my $keysym ( keys %KEYBOARD_HANDLER_FOR ) {
+        my $keycode
+            = exists $SYM_TO_KEYCODE_FOR{$keysym}
+            ? $display->XKeysymToKeycode( $SYM_TO_KEYCODE_FOR{$keysym} )
+            : $display->XKeysymToKeycode( XStringToKeysym($keysym) );
+        next unless $keycode;
+        $KEYBOARD_HANDLER_FOR{$keysym}->{keycode} = $keycode;
+        $self->x->GrabKey(
+            $KEYBOARD_HANDLER_FOR{$keysym}->{keycode},
+            $KEYBOARD_HANDLER_FOR{$keysym}->{modifier},
+            $win, True, Asynchronous, Asynchronous
+        );
+    }
+}
+
+sub configure_button_grab {
+    my ($self) = @_;
+
+    my $win = $self->x->root();
+    $self->x->GrabButton( Mod1Mask, 1, $win, True, ButtonPressMask,
+        GrabModeAsync, GrabModeAsync, None, None );
+    $self->x->GrabButton( Mod1Mask, 3, $win, True, ButtonPressMask,
+        GrabModeAsync, GrabModeAsync, None, None );
+}
+
+# ---------------- X wrapper functions
+sub is_valid_window {
+    my ($win) = @_;
+
+    return ( $win ne 'None' and $win > 0 );
+}
+
+sub error_handler {
+    my ( $self, $data ) = @_;
+
+    my ( $type, $seq, $info, $minor_op, $major_op )
+        = unpack( "xCSLSCxxxxxxxxxxxxxxxxxxxxx", $data );
+    my ($t);
+    $t = join(
+        "",
+        "Protocol error: bad $type (",
+        $self->do_interp( 'Error', $type ),
+        "); ",
+        "Sequence Number $seq\n",
+        " Opcode ($major_op, $minor_op) = ",
+        (          $self->do_interp( 'Request', $major_op )
+                || $self->{'ext_request'}{$major_op}[$minor_op][0]
+        ),
+        "\n"
+    );
+    if ( $type == 2 ) {
+        $t .= " Bad value $info (" . X11::Protocol::hexi($info) . ")\n";
+    }
+    elsif ($self->{'error_type'}[$type] == 1
+        || $self->{'ext_error_type'}[$type] == 1 )
+    {
+        $t .= " Bad resource $info (" . X11::Protocol::hexi($info) . ")\n";
+    }
+    carp $t;
+}
+
+sub get_child_windows {
+    my ( $self, $win ) = @_;
+
+    ( undef, undef, @_ ) = $self->x->QueryTree($win);
+    return @_;
+}
+
+sub is_window_alive {
+    my ( $self, $win ) = @_;
+
+    return any { $_ == $win } $self->get_child_windows( $self->x->root() );
+}
+
+sub get_window_attribute {
+    my ( $self, $win, $name ) = @_;
+
+    my %attr = $self->x->GetWindowAttributes($win);
+    return $attr{$name};
+}
+
+sub get_window_class {
+    my ( $self, $win ) = @_;
+
+    my @props
+        = $self->x->GetProperty( $win, 67, 'AnyPropertyType', 0, -1, 0 );
+    my ( $cmd, $class );
+    if ( $props[0] =~ /(.+)\x00(.+)\x00/ ) {
+        ( $cmd, $class ) = ( $1, $2 );
+    }
+    else {
+        $class = $props[0];
+    }
+    $self->{class_cache}->{$win} = { cmd => $cmd, class => $class };
+    return $class;
+}
+
+sub get_window_geometry {
+    my ( $self, $win ) = @_;
+    $self->debug( 'get_window_geometry', $win );
+
+    my %geom = $self->x->GetGeometry($win);
+    return (
+        x => $geom{x},
+        y => $geom{y},
+        w => $geom{width},
+        h => $geom{height}
+    );
+}
+
+sub configure_window_geometry {
+    my ( $self, $win, %geom ) = @_;
+    $self->debug( 'configure_window_geometry', $win, geometry => \%geom );
+
+    my %hash;
+    $hash{x}      = $geom{x} if exists $geom{x};
+    $hash{y}      = $geom{y} if exists $geom{y};
+    $hash{width}  = $geom{w} if exists $geom{w};
+    $hash{height} = $geom{h} if exists $geom{h};
+    $self->x->ConfigureWindow( $win, %hash );
+}
+
+sub warp_pointer {
+    my ( $self, $xpos, $ypos ) = @_;
+    $self->debug( 'warp_pointer', -1, val => "($xpos,$ypos)" );
+
+    $self->x->WarpPointer( 'None', $self->x->root(), 0, 0, 0, 0, $xpos,
+        $ypos );
+}
+
+sub configure_window_event_mask {
+    my ( $self, $win, $mask ) = @_;
+    $self->debug( 'configure_window_event_mask', $win, val => $mask );
+
+    $self->x->ChangeWindowAttributes( $win, event_mask => $mask );
+}
+
+sub debug {
+    my ( $self, $where, $win, %hash ) = @_;
+
+    return unless $self->debug_level();
+    return if $self->is_frame_window($win);
+    printf STDERR "  %-21s win:%07x (cmd=%s, class=%s) ",
+        substr( $where, 0, 21 ),
+        $win & 0xfffffff,
+        $self->{class_cache}->{$win}->{cmd}   // 'undef',
+        $self->{class_cache}->{$win}->{class} // 'undef';
+    print STDERR $hash{val} if exists $hash{val};
+    printf STDERR '(%d,%d) @ (%d,%d)', $hash{geometry}->{x},
+        $hash{geometry}->{y}, $hash{geometry}->{w}, $hash{geometry}->{h}
+        if exists $hash{geometry};
+    print STDERR "\n";
+}
+
+sub get_screen_width {
+    my ($self) = @_;
+
+    if ( `xrandr --current` =~ /^(DP1|HDMI1) connected (\d+)x(\d+)/m ) {
+        return $2;
+    }
+    else {
+        return $self->x->width_in_pixels();
+    }
+}
+
+sub get_screen_height {
+    my ($self) = @_;
+
+    if ( `xrandr --current` =~ /^(DP1|HDMI1) connected (\d+)x(\d+)/m ) {
+        return $3;
+    }
+    else {
+        return $self->x->height_in_pixels();
+    }
+}
+
+# ---------------- window manager functions
+sub convert_geomtry {
+    my ( $self, %geom ) = @_;
+
+    my $display_width = $self->get_screen_width() - $FRAME_WIDTH * 2;
+    my $display_height
+        = $self->get_screen_height() - $FRAME_WIDTH * 2 - $STAT_HEIGHT;
+    $geom{x} = $FRAME_WIDTH + int( $display_width * $geom{x} )
+        if ( exists $geom{x} and $geom{x} <= 1 );
+    $geom{y} = $STAT_HEIGHT + $FRAME_WIDTH + int( $display_height * $geom{y} )
+        if ( exists $geom{y} and $geom{y} <= 1 );
+    $geom{w} = int( $display_width * $geom{w} )
+        if ( exists $geom{w} and $geom{w} <= 1 );
+    $geom{h} = int( $display_height * $geom{h} )
+        if ( exists $geom{h} and $geom{h} <= 1 );
+    return %geom;
+}
+
+sub is_frame_window {
+    my ( $self, $win ) = @_;
+
+    return unless $win;
+    return any { defined $self->{$_} and $win == $self->{$_} }
+    qw(title frame_l frame_r frame_u frame_d);
+}
+
+sub create_frame_windows {
+    my ($self) = @_;
+
+    my $colormap = $self->x->default_colormap();
+    my $frame_color = $self->x->AllocNamedColor( $colormap, $FRAME_COLOR );
+    for my $frame_type (qw(frame_l frame_r frame_u frame_d)) {
+        my $w = $self->x->new_rsrc();
+        $self->x->CreateWindow(
+            $w,            $self->x->root(),
+            'InputOutput', $self->x->root_depth(),
+            'CopyFromParent', ( 0, 0 ),
+            ( $FRAME_WIDTH, $FRAME_WIDTH ), 0,
+            background_pixel => $frame_color
+        );
+        $self->x->MapWindow($w);
+        $self->{$frame_type} = $w;
+    }
+
+    my $title_color = $self->x->AllocNamedColor( $colormap, $TITLE_COLOR );
+    my $w = $self->x->new_rsrc();
+    $self->x->CreateWindow(
+        $w,            $self->x->root(),
+        'InputOutput', $self->x->root_depth(),
+        'CopyFromParent', ( 0, 0 ),
+        ( $TITLE_WIDTH, $TITLE_HEIGHT ), 0,
+        background_pixel => $title_color
+    );
+    $self->x->MapWindow($w);
+    $self->title($w);
+
+    my $font = $self->x->new_rsrc();
+    $self->x->OpenFont( $font, $TITLE_FONT );
+    my $gc = $self->x->new_rsrc();
+    $self->x->CreateGC(
+        $gc, $w,
+        font       => $font,
+        foreground => $self->x->black_pixel(),
+    );
+    $self->title_gc($gc);
+}
+
+sub _draw_frame_windows {
+    my ( $self, $win ) = @_;
+    $self->debug( 'draw_window_frame', $win );
+
+    my %geom = $self->get_window_geometry($win);
+    for my $frame_type (qw(frame_l frame_r frame_u frame_d title)) {
+        my %hash;
+        if ( $frame_type eq 'title' ) {
+            $hash{x} = $geom{x} + $geom{w} - $TITLE_WIDTH;
+            $hash{y} = $geom{y} + $geom{h} - $TITLE_HEIGHT;
+            $hash{w} = $TITLE_WIDTH;
+            $hash{h} = $TITLE_HEIGHT;
+            # update title bar
+            $self->x->ClearArea( $self->{$frame_type}, ( 0, 0 ),
+                $TITLE_WIDTH, $TITLE_HEIGHT, 0 );
+            my $str = sprintf '%x%s', $win, $self->get_window_class($win);
+            my $xpos = max( 0, ( $TITLE_WIDTH - length($str) * 8 ) / 2 );
+            $self->x->PolyText8(
+                $self->{$frame_type}, $self->title_gc(),
+                ( $xpos, 8 ),
+                [ 0, $str ]
+            );
+        }
+        elsif ( $frame_type eq 'frame_u' ) {
+            $hash{x} = $geom{x} - $FRAME_WIDTH;
+            $hash{y} = $geom{y} - $FRAME_WIDTH;
+            $hash{w} = $geom{w} + 2 * $FRAME_WIDTH;
+            $hash{h} = $FRAME_WIDTH;
+        }
+        elsif ( $frame_type eq 'frame_d' ) {
+            $hash{x} = $geom{x} - $FRAME_WIDTH;
+            $hash{y} = $geom{y} + $geom{h};
+            $hash{w} = $geom{w} + 2 * $FRAME_WIDTH;
+            $hash{h} = $FRAME_WIDTH;
+        }
+        elsif ( $frame_type eq 'frame_l' ) {
+            $hash{x} = $geom{x} - $FRAME_WIDTH;
+            $hash{y} = $geom{y};
+            $hash{w} = $FRAME_WIDTH;
+            $hash{h} = $geom{h};
+        }
+        elsif ( $frame_type eq 'frame_r' ) {
+            $hash{x} = $geom{x} + $geom{w};
+            $hash{y} = $geom{y};
+            $hash{w} = $FRAME_WIDTH;
+            $hash{h} = $geom{h};
+        }
+        $self->configure_window_geometry( $self->{$frame_type}, %hash );
+        $self->x->MapWindow( $self->{$frame_type} );
+        $self->raise_window( $self->{$frame_type} );
+    }
+}
+
+sub draw_frame_windows {
+    my ( $self, $win ) = @_;
+
+    my $class = $self->get_window_class($win);
+    if ( $class =~ /(mplayer)/i ) {
+        for my $frame_type (qw(frame_l frame_r frame_u frame_d title)) {
+            $self->x->UnmapWindow( $self->{$frame_type} );
+        }
+    }
+    else {
+        $self->_draw_frame_windows($win);
+    }
+}
+
+sub focus_window {
+    my ( $self, $win ) = @_;
+    $self->debug( 'focus_window', $win );
+
+    # FIXME: simple hack for removing missing window
+    unless ( $self->is_window_alive($win) ) {
+        $self->debug( '** missing window **', $win );
+        return;
+    }
+    $self->x->SetInputFocus( $win, RevertToParent, 0 );
+    $self->draw_frame_windows($win);
+    $self->focused_window($win);
+}
+
+sub raise_window {
+    my ( $self, $win ) = @_;
+    $self->debug( 'raise_window', $win );
+
+    $self->x->ConfigureWindow( $win, stack_mode => 'Above' );
+    $self->last_raised_window($win);
+}
+
+sub lower_window {
+    my ( $self, $win ) = @_;
+    $self->debug( 'lower_window', $win );
+
+    $self->x->ConfigureWindow( $win, stack_mode => 'Below' );
+    $self->last_raised_window(undef)
+        if ( $self->last_raised_window == $win );
+}
+
+sub manage_window {
+    my ( $self, $win ) = @_;
+    $self->debug( 'manage_window', $win );
+
+    return if $self->get_window_attribute( $win, 'override_redirect' );
+    # FIXME: draw shade around the window
+    $self->managed_in_ref()->{$win} = $self->vscreen();
+    $self->x->MapWindow($win);
+    $self->exposed_in_ref()->{$win} = 1;
+    $self->configure_window_event_mask( $win,
+        EnterWindowMask | LeaveWindowMask );
+}
+
+sub unmanage_window {
+    my ( $self, $win ) = @_;
+    $self->debug( 'unmanage_window', $win );
+
+    delete $self->managed_in_ref()->{$win};
+}
+
+# ----------------
+sub focus_next_window {
+    my ( $self, $win ) = @_;
+
+    # sort active windows with their geometries
+    my @list = sort {
+        my %a = $self->get_window_geometry($a);
+        my %b = $self->get_window_geometry($b);
+        return
+               ( $a{x} <=> $b{x} )
+            || ( $a{y} <=> $b{y} )
+            || $a <=> $b;
+    } keys %{ $self->exposed_in_ref() };
+    my $i = first_index { $_ == $win } @list;
+    my $nextwin = $list[0];
+    $nextwin = $list[ ( $i + 1 ) % @list ] if ( $i >= 0 );
+    return unless $nextwin;
+
+    $self->raise_window($nextwin);
+    my %geom = $self->get_window_geometry($nextwin);
+    $self->warp_pointer( $geom{x} + $PNT_OFFSET, $geom{y} + $PNT_OFFSET );
+    $self->focus_window($nextwin);
+}
+
+sub raise_or_lower_window {
+    my ( $self, $win ) = @_;
+
+    ( $self->{last_raised_window} == $win )
+        ? $self->lower_window($win)
+        : $self->raise_window($win);
+}
+
+sub maximize_window {
+    my ( $self, $win, %opts ) = @_;
+    $self->debug( 'maximize_window', $win );
+
+    my %geom         = $self->get_window_geometry($win);
+    my $is_maximized = (
+        ( $geom{x} == 0 and $geom{w} == $self->get_screen_width() )
+            or ($geom{y} == $STAT_HEIGHT
+            and $geom{h} == $self->get_screen_height() - $STAT_HEIGHT )
+    );
+    if ( $is_maximized and exists $self->{last_geom}->{$win} ) {
+        $self->configure_window_geometry( $win,
+            %{ $self->{last_geom}->{$win} } );
+    }
+    else {
+        $self->{last_geom}->{$win} = {%geom};
+        ( $geom{x}, $geom{w} ) = ( 0, $self->get_screen_width() )
+            if $opts{max_w};
+        ( $geom{y}, $geom{h} )
+            = ( $STAT_HEIGHT, $self->get_screen_height() - $STAT_HEIGHT )
+            if $opts{max_h};
+        $self->configure_window_geometry( $win, %geom );
+    }
+    %geom = $self->get_window_geometry($win);
+    $self->draw_frame_windows($win);
+    $self->warp_pointer( $geom{x} + $PNT_OFFSET, $geom{y} + $PNT_OFFSET );
+}
+
+# FIXME: should make sure focus is not lost
+sub layout_all_windows {
+    my ($self) = @_;
+
+    my $nterms = true { $self->get_window_class($_) =~ /xterm/i }
+    keys %{ $self->exposed_in_ref() };
+    my $term_count = 0;
+    for my $win ( sort { $a <=> $b } keys %{ $self->exposed_in_ref() } ) {
+        my $class = $self->get_window_class($win);
+        my %geom  = $self->get_window_geometry($win);
+        if ( $class =~ /xterm/i and $nterms >= 2 ) {
+            $self->configure_window_geometry(
+                $win,
+                $self->convert_geomtry(
+                    %{ $XTERM_GEOMETRIES[ $term_count++ % 4 ] }
+                )
+            );
+            next;
+        }
+        for my $regexp ( keys %LAYOUT_RULES_FOR ) {
+            my %new_geom = %{ $LAYOUT_RULES_FOR{$regexp} };
+            # toggle the location of office applications
+            if (    $regexp =~ /office/
+                and $geom{x} >= $self->get_screen_width / 4 )
+            {
+                $new_geom{x} = 0;
+                $new_geom{w} = 0.5 - $LAYOUT_OFFSET;
+            }
+            if ( $class =~ /$regexp/i ) {
+                $self->configure_window_geometry( $win,
+                    $self->convert_geomtry(%new_geom) );
+            }
+        }
+    }
+}
+
+# FIXME: should make sure focus is not lost
+sub tile_all_windows {
+    my ($self) = @_;
+
+    my @wins = sort {
+        # make sure Emacs always comes last
+        my $class_a = $self->get_window_class($a);
+        my $class_b = $self->get_window_class($b);
+        return 1  if ( $class_a =~ /emacs/i );
+        return -1 if ( $class_b =~ /emacs/i );
+        return $a <=> $b;
+    } keys %{ $self->exposed_in_ref() };
+    my $n = @wins;
+    my ( $nx, $ny ) = @{ $TILE_COUNTS_FOR{$n} };
+    for my $i ( reverse 1 .. $nx ) {
+        for my $j ( reverse 1 .. $ny ) {
+            last unless @wins;
+            my $win  = shift @wins;
+            my %geom = (
+                x => 1 / $nx * ( $i - 1 ),
+                y => 1 / $ny * ( $j - 1 ),
+                w => 1 / $nx,
+                h => 1 / $ny
+            );
+            if ( @wins == 0 ) {
+                $geom{y} -= $geom{h} * ( $j - 1 );
+                $geom{h} *= $j;
+            }
+            $self->configure_window_geometry( $win,
+                $self->convert_geomtry(%geom) );
+        }
+    }
+}
+
+sub select_vscreen {
+    my ( $self, $n ) = @_;
+
+    $self->vscreen($n);
+    for my $win ( keys %{ $self->managed_in_ref() } ) {
+        if ( $self->managed_in_ref()->{$win} == $n ) {
+            $self->x->MapWindow($win);
+            $self->exposed_in_ref()->{$win} = 1;
+        }
+        else {
+            $self->x->UnmapWindow($win);
+            delete $self->exposed_in_ref()->{$win};
+        }
+    }
+}
+
+# ---------------- event handlers
+sub handle_keypress {
+    my ( $self, $event_ref ) = @_;
+
+    # FIXME: ctrl-alt-button1 makes the window on the top
+    for my $keysym ( keys %KEYBOARD_HANDLER_FOR ) {
+        if ( $event_ref->{detail}
+            == $KEYBOARD_HANDLER_FOR{$keysym}->{keycode} )
+        {
+            $KEYBOARD_HANDLER_FOR{$keysym}->{callback}( $self, $event_ref );
+        }
+    }
+}
+
+sub handle_button_press {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{child};
+    return if ( $win eq 'None' );
+    $self->x->GrabPointer( $win, True, PointerMotionMask | ButtonReleaseMask,
+        GrabModeAsync, GrabModeAsync, None, None, 0 );
+    $self->start_event_ref($event_ref);
+    $self->start_geom_ref( { $self->get_window_geometry($win) } );
+}
+
+sub handle_button_release {
+    my ( $self, $event_ref ) = @_;
+
+    $self->x->UngrabPointer(0);
+}
+
+sub handle_motion_notify {
+    my ( $self, $event_ref ) = @_;
+
+    return
+        if (
+          abs( $event_ref->{root_x} - $self->last_x() )
+        + abs( $event_ref->{root_y} - $self->last_y() ) <= $MOVE_THRESHOLD );
+    $self->last_x( $event_ref->{root_x} );
+    $self->last_y( $event_ref->{root_y} );
+
+    my $xdiff = $event_ref->{root_x} - $self->start_event_ref->{root_x};
+    my $ydiff = $event_ref->{root_y} - $self->start_event_ref->{root_y};
+    my $win   = $self->start_event_ref->{child};
+    if ( $self->start_event_ref->{detail} == 1 ) {
+        $self->configure_window_geometry(
+            $win,
+            x => $self->start_geom_ref->{x} + $xdiff,
+            y => $self->start_geom_ref->{y} + $ydiff,
+        );
+    }
+    else {
+        $self->configure_window_geometry(
+            $win,
+            w => max( 1, $self->start_geom_ref->{w} + $xdiff ),
+            h => max( 1, $self->start_geom_ref->{h} + $ydiff )
+        );
+    }
+
+    if ( $self->start_event_ref->{detail} == 1 ) {
+        # cross window across virtual screen boundary
+        if ( $event_ref->{root_x}
+            >= $self->get_screen_width() - $MOVE_THRESHOLD
+            and $self->vscreen() < $MAX_VSCREEN )
+        {
+            $self->managed_in_ref()->{$win} = $self->vscreen() + 1;
+            $self->select_vscreen( $self->vscreen() + 1 );
+            $self->warp_pointer( $self->get_screen_width() * $BOUNCE_RATIO,
+                $event_ref->{root_y} );
+        }
+        if (    $event_ref->{root_x} <= $MOVE_THRESHOLD
+            and $self->vscreen() > $MIN_VSCREEN )
+        {
+            $self->managed_in_ref()->{$win} = $self->vscreen() - 1;
+            $self->select_vscreen( $self->vscreen() - 1 );
+            $self->warp_pointer(
+                $self->get_screen_width() * ( 1 - $BOUNCE_RATIO ),
+                $event_ref->{root_y} );
+        }
+    }
+}
+
+sub handle_map_request {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{window};
+    $self->manage_window($win);
+    my %geom = $self->get_window_geometry($win);
+    $self->warp_pointer( $geom{x} + $PNT_OFFSET, $geom{y} + $PNT_OFFSET );
+    $self->focus_window($win);
+}
+
+sub handle_unmap_notify {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{window};
+    if ( $self->exposed_in_ref()->{$win} ) {
+        $self->unmanage_window($win);
+        delete $self->exposed_in_ref()->{$win};
+    }
+}
+
+sub handle_map_notify {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{window};
+    return if $self->is_frame_window($win);
+    $self->manage_window($win);
+}
+
+sub handle_enter_notify {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{event};
+    $self->focus_window($win)
+        if ( $self->exposed_in_ref->{$win} );
+}
+
+sub handle_destroy_notify {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{window};
+    $self->unmanage_window($win);
+}
+
+sub handle_configure_request {
+    my ( $self, $event_ref ) = @_;
+
+    my $win = $event_ref->{window};
+    if ( exists $event_ref->{x} or exists $event_ref->{width} ) {
+        my %geom;
+        $geom{x} = $event_ref->{x}      if ( exists $event_ref->{x} );
+        $geom{y} = $event_ref->{y}      if ( exists $event_ref->{y} );
+        $geom{w} = $event_ref->{width}  if ( exists $event_ref->{width} );
+        $geom{h} = $event_ref->{height} if ( exists $event_ref->{height} );
+
+        # programmable window placement
+        my $class = $self->get_window_class($win);
+        if ( $class =~ /ffplay/ ) {
+            my ( $disp_w, $disp_h )
+                = ( $self->get_screen_width(), $self->get_screen_height() );
+            $geom{x} = int( rand( $disp_w - $geom{w} ) );
+            $geom{y} = int( rand( $disp_h - $geom{h} ) );
+        }
+        $self->configure_window_geometry( $win, %geom );
+    }
+    elsif ( exists $event_ref->{stack_mode} ) {
+        $self->x->ConfigureWindow( $win,
+            stack_mode => $event_ref->{stack_mode} );
+    }
+    else {
+        ### $event_ref
+    }
+}
+
+sub dump_event {
+    my $event_ref = shift;
+
+    my %event = %$event_ref;
+    $event{name}   //= 'N/A';
+    $event{mode}   //= 'N/A';
+    $event{window} //= 0xffffff;
+    $event{child}  //= 0xffffff;
+    $event{child} = 0xffffff if ( $event{child} eq 'None' );
+    $event{event}  //= 0xffffff;
+    $event{root_x} //= -1;
+    $event{root_y} //= -1;
+    $event{detail} //= 'N/A';
+    printf STDERR "%-15s %-7s win:%07x chl:%07x evt:%07x (%4d,%4d) %s\n",
+        @event{qw(name mode window child event root_x root_y detail)};
+}
+
+my %EVENT_HANDLER_FOR = (
+    KeyPress         => \&handle_keypress,
+    ButtonPress      => \&handle_button_press,
+    MotionNotify     => \&handle_motion_notify,
+    ButtonRelease    => \&handle_button_release,
+    MapRequest       => \&handle_map_request,
+    ConfigureRequest => \&handle_configure_request,
+    UnmapNotify      => \&handle_unmap_notify,
+    EnterNotify      => \&handle_enter_notify,
+    DestroyNotify    => \&handle_destroy_notify,
+    MapNotify        => \&handle_map_notify,
+);
+
+sub event_loop {
+    my ($self) = @_;
+
+    while (1) {
+        my %event = $self->x->next_event();
+        dump_event( \%event )
+            if ( $self->debug_level()
+            and !$self->is_frame_window( $event{window} ) );
+        if ( exists $EVENT_HANDLER_FOR{ $event{name} } ) {
+            $EVENT_HANDLER_FOR{ $event{name} }->( $self, \%event );
+        }
+    }
+}
+
+#----------------------------------------------------------------
+package main;
+
+use File::Basename;
+use Getopt::Std;
+use diagnostics;
+use strict;
+use warnings;
+
+sub usage {
+    my $prog = basename($0);
+    die <<EOF;
+usage: $prog [-d]
+  -d  debug mode
+EOF
+}
+
+our ($opt_d);
+getopts 'd' or usage();
+my $debug_level = $opt_d;
+
+my $wm = WindowManager->new( { debug_level => $debug_level } );
+$wm->configure_root_event_mask();
+$wm->configure_keyboard_grab();
+$wm->configure_button_grab();
+
+for my $child ( $wm->get_child_windows( $wm->x->root() ) ) {
+    $wm->manage_window($child)
+        if ( $wm->get_window_attribute( $child, 'map_state' ) eq 'Viewable' );
+}
+
+$wm->create_frame_windows();
+$wm->focus_next_window(-1);
+$wm->event_loop();
+
+__END__
+
+=head1 NAME
+
+pwm - A simple but extensible X11 window manager written in Perl.
+
+=head1 SYNOPSIS
+
+pwm
+
+=begin html
+
+<h1>SCREENSHOT</h1>
+
+<center>
+  <img src="screenshot-1.png"><br>
+  <img src="screenshot-2.png">
+</center>
+
+=end html
+
+=head1 DESCRIPTION
+
+This manual page documents B<pwm>, a simple but extensible X11 window
+manager written in Perl.  Development of B<pwm> was motivated by
+perlwm (http://perlwm.sourceforge.net/), which is a window manager
+written entirely in Perl.  The idea of implementing X11 window manager
+in Perl is great since it allows you to fully customize the behavior
+of the window manager with a little Perl programming.  Similarly to
+perlwm, B<pwm> is built based on X11::Protocol module developed by
+Stephen McCamant.
+
+The notable features of B<pwm> are its simplicity, compactness, and
+programmable cascaded/tiled window placement algorithms.
+
+B<pwm> is simple in a sense that it is entirely written in Perl, and
+it requires only X11::Protocol module from CPAN.  B<pwm> is written
+with less than 1,000 lines of code.  If you are familiar with X11
+protocol and basics of Perl programming, you can easily read and
+understand the source code of B<pwm>.
+
+B<pwm> is compact since it provides minimal window decorations.  B<pwm>
+has no pop-up menus, graphical icons, and window animations.  B<pwm>
+is designed to consume the minimum amount of screen space for letting
+users and applications to use as wide screen space as possible.  For
+instance, B<pwm> draws the window title inside the window, rather than
+outside the window, which saves dozen-pixel lines around the window.
+
+B<pwm> supports two types of window placement algorithms: programmed
+mode and tiled mode.  
+
+In the programmed mode, you can specify rules for inferring
+appropriate window geometries.  By default, Emacs is placed at the
+top-left corner of the screen with 45% window width and 100% window
+height.  Midori, firefox, chromium, xpdf, xdvi, LibreOffice, tgif and
+Mathematica are placed next to the Emacs with 55% window width and
+100% window height.  The terminal window is placed at the bottom-right
+corner with 50% window width and 70% window height.  If there exist
+more than two terminal windows, the size of each terminal window is
+shrunk to 1/4 of the screen, and placed in a non-overlapping way.
+
+In the titled mode, all windows are placed in a titled fashion so that
+any window will have the same window width and height, and that any
+window will not overlap with others, as like tile-based window
+managers.  Moreover, B<pwm> tries to allocate larger area for Emacs;
+i.e., if there are three windows, say, Emacs and two terminals, Emacs
+will occupy the half of the screen, and each terminal will have the
+quarter of the screen.
+
+=head1 OPTIONS
+
+None
+
+=head1 INSTALLATION
+
+=over 4
+
+=item 1. Install the 8x8maru bitmap font 
+
+8x8maru bitmap font is available at:
+
+  http://www.lsnl.jp/~ohsaki/software/pwm/8x8maru.bdf
+
+Save the bitmap font file `8x8maru.bdf' in a directory contained in
+the X11 font path.  The current font path can be checked with
+
+  $ xset q
+
+Note that the font file index `fonts.dir' file in the font directory
+must be updated so that X server can recognize 8x8maru font.  An
+example session is as follows.
+
+  $ mkdir -p $HOME/lib/fonts
+  $ cd $HOME/lib/fonts
+  $ wget http://www.lsnl.jp/~ohsaki/software/pwm/8x8maru.bdf
+  $ xset +fp $HOME/lib/fonts
+  $ mkfontdir
+  $ xset fp rehash
+
+=item 2. Change the window manager
+
+In X window system, multiple window managers cannot be run
+simultaneously.  So, to use pwm, you have to disable or kill the
+currently-running window manager before starting pwm.  The process of
+invoking a window manager as well as other applications is operating
+system dependent.  A window manager can be invoked in several ways ---
+from per-user scripts (i.e., ~/.xinitrc and ~/.xsessionrc),
+system-wide scripts (e.g., /etc/X11/xinit/xinitrc and
+/etc/X11/Xsession), and display managers (e.g., xdm and gdm).  Check
+manual pages (e.g., xinit(1), startx(1), Xsession(5), xdm(1)) for
+details.
+
+This section explains the (possibly) simplest way to change the window
+manager.
+
+=over 4
+
+=item 1. Change the runlevel from 3 to 2 to disable the display
+manager.
+
+Edit /etc/inittab and replace the line `id:3:initdefault:' with
+`id:2:initdefault:'.  After the reboot, the system will not start a
+display manager such as xdm and gdm.  Reboot the system, and login via
+console.  Make sure X window system is not running.
+
+=item 2. Create the client script ~/.xinitrc.
+
+Create ~/.xinitrc file.  An exmple ~/.xinitrc file is:
+
+  xset +fp $HOME/lib/fonts
+  emacs &
+  pwm &
+  pwmmon &
+  pwmlog &
+  krxvt
+
+=item 3. Start X server with xinit.
+
+Run xinit to start X server.
+
+=back
+
+=back
+
+=head1 CUSTOMIZATION
+
+Since Perl is one of interpreters, you can easily customize the
+behavior of B<pwm> by directly modifying its code.  For instance, if
+you want to change the appearance of window frames, edit the constants
+section.  If you want to change the keyboard binding, edit the hash
+variable %KEYBOARD_HANDLER_FOR.  The key of the hash is the name of an X11
+keysym imported with X11::Keysyms, which is automatically generated
+from /usr/include/X11/keysymdef.h.  The value of the hash is self
+explanatory: modifier is the mask of keyboard modifiers and callback
+is the reference to the callback function.
+
+=head1 BINDINGS
+
+=over 4
+
+=item Mod1 + Button1
+
+Move the current active window while dragging with pressing Mod1 + Button1.
+
+=item Mod1 + Button3
+
+Resize the current active window while dragging with pressing Mod1 + Button3.
+
+=item Ctrl + Mod1 + i
+
+Focus the next window.  Available windows are circulated in the order
+of top-left, bottom-left, top-right, and bottom-right.
+
+=item Ctrl + Mod1 + m
+
+Raise or lower the current active window.
+
+=item Ctrl + Mod1 + '
+
+Toggle the maximization of the current active window.
+
+=item Ctrl + Mod1 + ;
+
+Toggle the vertical maximization of the current active window.
+
+=item Ctrl + Mod1 + ,
+
+Layout all available windows in the programmed mode.
+
+=item Ctrl + Mod1 + .
+
+Layout all available windows in the tiled mode.
+
+=item Ctrl + Mod1 + z
+
+Destroy the current active window.
+
+=item Ctrl + Mod1 + 1
+
+Run a command "(unset STY; rxvt) &" via system() function.
+
+=item Ctrl + Mod1 + 2
+
+Run a command "pidof emacs || emacs &" via system() function.
+
+=item Ctrl + Mod1 + 3
+
+Run a command "pidof chrome || chromium &" via system() function.
+
+=item Ctrl + Mod1 + 6 -- Ctrl + Mod1 + 9, Ctrl + Mod1 + 0
+
+Run a ssh command with different arguments.  Edit according to your environment.
+
+=item Mod1 + F1 -- Mod1 + F4
+
+Switch to the virtual screen 1--4, respectively.
+
+=item Shift + F5 -- Shift + F9
+
+Run a shell script.  Edit according to your environment.
+
+=back
+
+=head1 PATCH TO X11/Protocol.pm
+
+X11::Protocol dies when event handlers receive null data.  You can fix
+the problem by applying the following patch to X11/Protocol.pm.
+
+  --- Protocol.pm.orig	2006-10-09 05:16:30.000000000 +0900
+  +++ Protocol.pm	2012-11-14 09:06:26.000000000 +0900
+  @@ -729,7 +729,7 @@
+   	$backing_planes, $backing_pixel, $save_under, $map_is_installed,
+   	$map_state, $override_redirect, $colormap, $all_event_masks,
+   	$your_event_mask, $do_not_propagate_mask)
+  -	 = unpack("xCxxxxxxLSCCLLCCCCLLLS", $data);
+  +	 = defined $data ? unpack("xCxxxxxxLSCCLLCCCCLLLS", $data) : (0) x 15;
+   
+        $colormap = "None" if !$colormap and $self->{'do_interp'};
+   
+  @@ -829,7 +829,7 @@
+        my $self = shift;
+        my($data) = @_;
+        my($depth, $root, $x, $y, $width, $height, $border_width)
+  -	 = unpack("xCxxxxxxLssSSSxxxxxxxxxx", $data);
+  +	 = defined $data ? unpack("xCxxxxxxLssSSSxxxxxxxxxx", $data) : (0) x 7;
+   
+        return ("depth" => $depth, "root" => $root, "x" => $x, "y" => $y,
+   	     "width" => $width, "height" => $height,
+  @@ -899,7 +899,7 @@
+        my $self = shift;
+        my($data) = @_;
+        my($format, $type, $bytes_after, $len) =
+  -	 unpack "xCxxxxxxLLLxxxxxxxxxxxx", substr($data, 0, 32);
+  +	 defined $data ? unpack("xCxxxxxxLLLxxxxxxxxxxxx", substr($data, 0, 32)) : (0) x 4;
+        my($m) = $format / 8;
+        my($val) = substr($data, 32, $len * $m);
+        return ($val, $type, $format, $bytes_after);
+
+=head1 AVAILABILITY
+
+The latest version of B<pwm> is available at
+
+http://www.lsnl.jp/~ohsaki/software/pwm/pwm
+
+=head1 SEE ALSO
+
+X11::Protocol(3pm), X11::Keysyms(3pm), X11::Xlib(3pm), twm(1), perlwm(1), pwmon(1), pwmlog(1)
+
+=head1 AUTHOR
+
+Hiroyuki Ohsaki <ohsaki[atmark]lsnl.jp>
+
+=cut

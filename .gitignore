@@ -1,0 +1,14 @@
+/.bin/
+/.mutt/
+/mutt/
+/.config/
+/.getmail/
+/astrill-openvpn/
+/astrill-openvpncn/
+/abook
+.goobookrc
+/wallpapers
+/iso
+/mail/
+.msmtprc
+/.ssh/

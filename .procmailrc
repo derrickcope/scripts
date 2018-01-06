@@ -1,0 +1,76 @@
+#~/.procmailrx
+#config file for procmail info@pilatesshanghai.com
+#
+PATH=/bin:/usr/bin
+MAILDIR=$HOME/mail
+LOGFILE=/dev/null
+SHELL=/bin/sh
+
+# SpamAssassin sample procmailrc
+#
+# Pipe the mail through spamassassin (replace 'spamassassin' with 'spamc'
+# if you use the spamc/spamd combination)
+#
+# The condition line ensures that only messages smaller than 250 kB
+# (250 * 1024 = 256000 bytes) are processed by SpamAssassin. Most spam
+# isn't bigger than a few k and working with big messages can bring
+# SpamAssassin to its knees.
+#
+# The lock file ensures that only 1 spamassassin invocation happens
+# at 1 time, to keep the load down.
+#
+#:0fw
+#| /usr/bin/vendor_perl/spamassassin
+
+# Mails with a score of 15 or higher are almost certainly spam (with 0.05%
+# false positives according to rules/STATISTICS.txt). Let's put them in a
+# different mbox. (This one is optional.)
+#:0:
+#* ^X-Spam-Level: \*\*\*\*\*
+#$HOME/mail/spam
+
+# All mail tagged as spam (eg. with a score higher than the set threshold)
+# is moved to "probably-spam".
+#:0:
+#* ^X-Spam-Status: Yes
+#$HOME/mail/spam
+
+# Work around procmail bug: any output on stderr will cause the "F" in "From"
+# to be dropped.  This will re-add it.
+#:0
+#* ^^rom[ ]
+#{
+#  LOG="*** Dropped F off From_ header! Fixing up. "
+  
+#  :0 fhw
+#  | sed -e '1s/^/F/'
+#}
+
+# spambayes config for procmail spambayes.sourgeforge.net/unix.html 
+:0fw:hamlock
+| /usr/bin/sb_filter.py -d $HOME/.hammie.db
+
+:0
+* ^X-Spambayes-Classification: spam 
+spam/
+      
+:0
+* ^X-Spambayes-Classification: unsure
+spam/
+
+:0 # Deliver to info file
+* ^TO_info@pilatesshanghai\.com
+info/
+
+:0 # Deliver to info file
+* ^TO_derrick@thecopes\.me
+me/
+
+
+:0 # Deliver to inbox
+* ^TO_derrick@pilatesshanghai\.com
+inbox/
+
+#the rest
+:0
+other/

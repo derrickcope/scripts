@@ -1,0 +1,3 @@
+#autostart some things
+
+feh --bg-fill ~/pictures/wallpapers/digiarch.jpg &
