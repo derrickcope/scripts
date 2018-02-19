@@ -42,7 +42,7 @@ dunst &
 #screenkey &
 
 # change CAP key to esc for vim
-xmodmap -e 'clear Lock' -e 'keycode 0x42 = Escape'
+xmodmap -e 'clear Lock' -e 'keycode 66 = Escape Caps_Lock NoSymbol NoSymbol'
 
 #lemonbar.pl | lemonbar -p -g 1880x20+2+0 & 
 
