@@ -1,0 +1,16 @@
+# ~/.inputrc 
+# config for readline
+#
+
+set editing-mode vi
+set show-mode-in-prompt on
+set vi-ins-mode-string INSERT
+set vi-cmd-mode-string NORMAL
+set colored-stats On
+set visible-stats On
+set mark-symlinked-directories On
+set colored-completion-prefix On
+set menu-complete-display-prefix On
+
+
+

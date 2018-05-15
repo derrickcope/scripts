@@ -1,0 +1,8 @@
+# Change the color of taged, deleted and new messages in the index
+
+color   index       red         default     ~F         # Flagged
+color   index       magenta     default     ~T         # Tagged
+color   index       cyan        default     ~N         # New
+color   index       white       default     ~O         # Old
+color   index       yellow      default     ~D         # Deleted
+color   sidebar_new cyan        default                # color for sidebar folder with new emails 

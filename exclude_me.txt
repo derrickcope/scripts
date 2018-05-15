@@ -2,6 +2,7 @@
 .Cache/
 .cache/
 .thumbnails
+.protonvpn-cli/
 #.*
 videos
 lost+found
