@@ -1,6 +1,10 @@
 /.bin/
 /.mutt/
-/mutt/
+/neomutt/certificates
+/neomutt/sigderrick
+/neomutt/siginfo
+/neomutt/sigme
+/neomutt/aliases
 /.config/
 /.getmail/
 /astrill-openvpn/
