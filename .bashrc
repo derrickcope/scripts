@@ -37,34 +37,39 @@ alias ls='ls --color=auto'
 #PS1='[\u@\h \W]\$ '
 PS1="\[\033[33;1m\]\t\[\033[m\]-\[\033[1;36m\]\u\[\033[1;31m\]@\[\033[1;36m\]\h:[\[\033[33;1m\]\w\[\033[1;36m\]]\[\033[m\]\$ "
 
+# config for fzf
 set -o vi
+source /usr/share/fzf/key-bindings.bash
+source /usr/share/fzf/completion.bash
+export FZF_ALT_C_COMMAND='fd --hidden --type d'
+export FZF_CTRL_T_COMMAND='fd --hidden --type f'
+complete -o bashdefault -o default -F _fzf_path_completion mpv #add mpv to fzf default completion
+complete -o bashdefault -o default -F _fzf_path_completion nv #add mpv to fzf default completion
+complete -o bashdefault -o default -F _fzf_path_completion feh  #add pic preview to fzf see img alias
+complete -o bashdefault -o default -F _fzf_path_completion mupdf  #add pic preview to fzf see img alias
 
 #set editor and pager
 export EDITOR=nvim
 
 #set Terminal
-export TERMINAL=urxvt
+export TERMINAL=tilix
 
 #set Browser
 export BROWSER=w3m
-#export BROWSER=google-chrome-stable
-
-#ibus
-export GTK_IM_MODULE=ibus
-export XMODIFIERS=@im=ibus
-export QT_IM_MODULE=ibus
-ibus-daemon -drx
 
 # bspwm 
 PANEL_FIFO=/tmp/panel_fifo
 XDG_CONFIG_HOME=$HOME/.config
-PANEL_HEIGHT=24
+PANEL_HEIGHT=30
 PANEL_FONT="-*-fixed-*-*-*-*-10-*-*-*-*-*-*-*"
 PANEL_WM_NAME=bspwm_panel
 export PANEL_WM_NAME PANEL_FONT PANEL_HEIGHT XDG_CONFIG_HOME PANEL_FIFO
 
 #PATH="/home/derrick/perl5/bin${PATH+:}${PATH}"; export PATH;
-PERL5LIB="/home/derrick/perl5/lib/perl5${PERL5LIB+:}${PERL5LIB}"; export PERL5LIB;
-PERL_LOCAL_LIB_ROOT="/home/derrick/perl5${PERL_LOCAL_LIB_ROOT+:}${PERL_LOCAL_LIB_ROOT}"; export PERL_LOCAL_LIB_ROOT;
-PERL_MB_OPT="--install_base \"/home/derrick/perl5\""; export PERL_MB_OPT;
-PERL_MM_OPT="INSTALL_BASE=/home/derrick/perl5"; export PERL_MM_OPT;
+#PERL5LIB="/home/derrick/perl5/lib/perl5${PERL5LIB+:}${PERL5LIB}"; export PERL5LIB;
+#PERL_LOCAL_LIB_ROOT="/home/derrick/perl5${PERL_LOCAL_LIB_ROOT+:}${PERL_LOCAL_LIB_ROOT}"; export PERL_LOCAL_LIB_ROOT;
+#PERL_MB_OPT="--install_base \"/home/derrick/perl5\""; export PERL_MB_OPT;
+#PERL_MM_OPT="INSTALL_BASE=/home/derrick/perl5"; export PERL_MM_OPT;
+
+
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
