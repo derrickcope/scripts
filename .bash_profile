@@ -5,7 +5,7 @@ export PATH="${PATH}:$HOME/.bin:$HOME/.rakudobrew/bin:$HOME/.gem/ruby:$HOME/.gem
 #PATH="/home/derrick/perl5/bin${PATH+:}${PATH}"; export PATH;
 
 #export to PATH
-export PATH="$HOME/.cargo/bin:${PATH}"
+PATH="$HOME/.cargo/bin:${PATH}"; export PATH;
 
 [[ -f ~/.bashrc ]] && . ~/.bashrc
 

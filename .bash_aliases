@@ -11,7 +11,7 @@ alias pacreps='pacman -Ss'		# Search for package(s) in the repositories
 alias pacloc='pacman -Qi'		# Display information about a given package in the local database
 alias paclocs='pacman -Qs'		# Search for package(s) in the local database
 alias paclo="pacman -Qdt"		# List all packages which are orphaned
-alias paclorem="pacman -Rns $(pacman -Qtdq)" #Remove all orphaned packages
+alias paclorem="sudo pacman -Rns $(pacman -Qtdq)" #Remove all orphaned packages
 alias pacc="sudo pacman -Scc"		# Clean cache - delete all the package files in the cache
 alias paclf="pacman -Ql"		# List all files installed by a given package
 alias pacown="pacman -Qo"		# Show package(s) owning the specified file(s)
@@ -33,15 +33,11 @@ alias paclock="sudo touch /var/lib/pacman/db.lck"  # Create the lock file /var/l
 
 alias vim='nvim'
 alias nv='nvim'
-alias snv='sudo nvim'
-alias news='newsbeuter -r'
-#alias play='mplayer'
-alias play='ffplay -x 1368'
-alias playfs='ffplay -fs'
-alias tdl='todoist --list'
-alias tdh='todoist --help'
-alias tda='clear && ~/scripts/todotxt/todo.sh add'
+alias snv='sudo -u derrick nvim'
 
+# for fzf
+#alias img='gpicview'
+#alias img='gpicview $(fzf --preview='timg -E -f1 -c1 -g $(( $COLUMNS / 2 - 4 ))x$(( $FZF_PREVIEW_HEIGHT * 2 )) {}')'
 
 # some more ls aliases
 alias ll='ls -lh'

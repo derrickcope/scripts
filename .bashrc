@@ -52,10 +52,10 @@ complete -o bashdefault -o default -F _fzf_path_completion mupdf  #add pic previ
 export EDITOR=nvim
 
 #set Terminal
-export TERMINAL=tilix
+export TERMINAL=termite
 
 #set Browser
-export BROWSER=w3m
+export BROWSER=firefox
 
 # bspwm 
 PANEL_FIFO=/tmp/panel_fifo
