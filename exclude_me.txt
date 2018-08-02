@@ -26,4 +26,4 @@ perl5
 .zef
 .cpan
 .cpanm
-podcasts
+.gem/
