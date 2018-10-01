@@ -6,7 +6,6 @@ set config_charset  = "utf-8:iso-8859-1"
 source ~/.config/neomutt/color
 source ~/.config/neomutt/keybind
 
-
 #Receive options
 set mbox_type       = maildir
 set folder          = "~/mail"
@@ -19,10 +18,10 @@ set copy            = yes     #copy sent mail
 set move            = yes     #move read mail
 set delete          = yes     #delete mail on exit
 set mark_old                #mark read emails
-mailboxes   +derrick +inbox +info +me +other +__________________ +drafts +spam +sent
+mailboxes   +derrick +info +me +other +__________________ +drafts +spam +sent
 
 #Send options
-set from            = "derrick@myemail.com"
+set from            = "derrick@pilatesshanghai.com"
 set sendmail        = "/usr/bin/msmtp"
 set envelope_from   = yes
 
@@ -61,7 +60,11 @@ alternative_order text/plain text/enriched text/html     # save html for last
 # Sidebar
 set sidebar_visible =   yes
 set sidebar_width   =   20
-# set sidebar_format  =   %B%?F? [%F]?%* %?N?%N/?%S
+set sidebar_delim_chars     = '/.'
+set sidebar_indent_string   = '  '
+set sidebar_divider_char    = '|'
+set mail_check_stats
+set sidebar_format  =   '%B%?F?[%F]?%* %?N? %N?'
 
 # Set index above pager
 set pager_index_lines=4

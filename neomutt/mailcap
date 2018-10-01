@@ -10,3 +10,5 @@ image/png;                  gpicview %s;
 application/vnd.ms-excel;   localc %s;
 application/vnd.ms-word;    lowriter %s;
 application/octet-stream;   gpicview %s;
+text/plain;                 less %s;
+

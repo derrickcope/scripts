@@ -13,14 +13,18 @@ bind    index               j           next-entry
 bind    index               k           previous-entry
 bind    pager               j           next-line 
 bind    pager               k           previous-line    
-bind    index,pager               <Space>     next-entry
+bind    index,pager         <Space>     next-entry
 bind    index,pager         v           view-attachments                    #View Attachements
 bind    index,pager         R           group-reply	                        #Reply all
 bind    index,pager         r           reply                               #Reply
 bind    index,pager         \cc         copy-message	                      #Label
 bind    index,pager         \cv         save-message	                      # "Move to"
 macro   index,pager         S           <save-message>=spam<enter>y         #"Spam"
-macro   index,pager         N           <save-message>=derrick<enter>y      #"not Spam"
+macro   index,pager         \cd           <save-message>=derrick<enter>y      #"not Spam"
+macro   index,pager         \cm           <save-message>=me<enter>y      #"not Spam"
+macro   index,pager         \ci           <save-message>=info<enter>y      #"not Spam"
+#macro   index,pager         S         "|sb_filter.py -d $HOME/.hammie.db -f -s | procmail \&\n<delete-message>" 
+#macro   index,pager         H         "|sb_filter.py -d $HOME/.hammie.db -f -g | procmail \&\n<delete-message>" 
 macro   index,pager         i           <set-flag>O	                        #"Mark as unread"
 macro   index               <esc>s      <limit>~F<enter>                    #"show flagged messages"
 macro   index               <esc>n      <limit>~N<enter>                    #"show new messages"

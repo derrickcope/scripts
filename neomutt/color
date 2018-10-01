@@ -1,8 +1,12 @@
 # Change the color of taged, deleted and new messages in the index
 
-color   index       red         default     ~F         # Flagged
-color   index       magenta     default     ~T         # Tagged
-color   index       cyan        default     ~N         # New
-color   index       white       default     ~O         # Old
-color   index       yellow      default     ~D         # Deleted
-color   sidebar_new cyan        default                # color for sidebar folder with new emails 
+color   index           red         default     ~F         # Flagged
+color   index           magenta     default     ~T         # Tagged
+color   index           blue        default     ~N         # New
+color   index           white       default     ~O         # Old
+color   index           yellow      default     ~D         # Deleted
+color   sidebar_new     blue        default                # color for sidebar folder with new emails
+#color   sidebar_flagged red         default
+color   sidebar_divider color8      default
+color   index           red         default   "-h '^X-Spambayes-Disposition: spam' -F"
+
