@@ -14,8 +14,7 @@
 #fi
 
 
-[[ -f ~/.Xresources ]] && xrdb -merge -I$HOME ~/.Xresources
-
+#[[ -f ~/.Xresources ]] && xrdb -merge $HOME ~/.Xresources
 #screenlayout
 ~/.screenlayout/default.sh
 
@@ -24,6 +23,11 @@ feh --bg-fill $HOME/pictures/wallpapers/paisleyskull.png
 
 #set cursor
 xsetroot -cursor_name left_ptr
+
+#config Chinese input
+export GTK_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export QT_MODULE=fcitx
 
 # Autostart
 udiskie &
@@ -42,7 +46,7 @@ dunst &
 #screenkey &
 
 # change CAP key to esc for vim
-xmodmap -e 'clear Lock' -e 'keycode 66 = Escape Caps_Lock NoSymbol NoSymbol'
+#xmodmap -e 'clear Lock' -e 'keycode 66 = Escape Caps_Lock NoSymbol NoSymbol'
 
 #lemonbar.pl | lemonbar -p -g 1880x20+2+0 & 
 
@@ -51,7 +55,7 @@ sxhkd -m -1 &
 #xbindkeys &
 
 # MPD deamon
-[ ! -s ~/.config/mpd/pid ] && mpd
+#[ ! -s ~/.config/mpd/pid ] && mpd
 
 #exec swm
 #exec urxvt  

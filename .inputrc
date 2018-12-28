@@ -12,5 +12,9 @@ set mark-symlinked-directories On
 set colored-completion-prefix On
 set menu-complete-display-prefix On
 
+$if mode = vi
+  Control-l clear-screen
+$endif
+
 
 

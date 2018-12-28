@@ -21,47 +21,32 @@ if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
 
-# enable color support of ls and also add handy aliases
-if [ -x /usr/bin/dircolors ]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
-    alias ls='ls --color=auto'
-    alias dir='dir --color=auto'
-    alias vdir='vdir --color=auto'
-
-    alias grep='grep --color=auto'
-    alias fgrep='fgrep --color=auto'
-    alias egrep='egrep --color=auto'
-fi
-
-alias ls='ls --color=auto'
 #PS1='[\u@\h \W]\$ '
-PS1="\[\033[33;1m\]\t\[\033[m\]-\[\033[1;36m\]\u\[\033[1;31m\]@\[\033[1;36m\]\h:[\[\033[33;1m\]\w\[\033[1;36m\]]\[\033[m\]\$ "
+PS1="\[\033[33;1m\]\t\[\033[m\]-\[\033[1;94m\]\u\[\033[1;31m\]@\[\033[1;94m\]\h:[\[\033[33;1m\]\w\[\033[1;94m\]]\[\033[m\]\$ "
 
 # config for fzf
 set -o vi
 source /usr/share/fzf/key-bindings.bash
 source /usr/share/fzf/completion.bash
+export FZF_DEFAULT_COMMAND='rg --files --no-hidden --hidden --follow 2> /dev/null'
 export FZF_ALT_C_COMMAND='fd --hidden --type d'
-export FZF_CTRL_T_COMMAND='fd --hidden --type f'
-complete -o bashdefault -o default -F _fzf_path_completion mpv #add mpv to fzf default completion
-complete -o bashdefault -o default -F _fzf_path_completion nv #add mpv to fzf default completion
-complete -o bashdefault -o default -F _fzf_path_completion feh  #add pic preview to fzf see img alias
-complete -o bashdefault -o default -F _fzf_path_completion mupdf  #add pic preview to fzf see img alias
+export FZF_CTRL_T_COMMAND='rg --files --no-hidden --hidden --follow 2> /dev/null'
 
 #set editor and pager
 export EDITOR=nvim
 
 #set Terminal
-export TERMINAL=termite
+#export TERMINAL=termite
+#export TERM=xterm-256color
 
 #set Browser
 export BROWSER=firefox
 
 # bspwm 
 PANEL_FIFO=/tmp/panel_fifo
-XDG_CONFIG_HOME=$HOME/.config
+XDG_CONFIG_HOME=$HOME/.config 
 PANEL_HEIGHT=30
-PANEL_FONT="-*-fixed-*-*-*-*-10-*-*-*-*-*-*-*"
+PANEL_FONT="-*-fixed-*-*-*-*-10-*-*-*-*-*-*-*" 
 PANEL_WM_NAME=bspwm_panel
 export PANEL_WM_NAME PANEL_FONT PANEL_HEIGHT XDG_CONFIG_HOME PANEL_FIFO
 

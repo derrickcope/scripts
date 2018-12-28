@@ -1,6 +1,7 @@
 .local/
 .Cache/
 .cache/
+.notmutt
 .thumbnails
 .protonvpn-cli/
 #.*
@@ -24,6 +25,9 @@ scripts/.mutt
 perl5
 .perl6
 .zef
+.rustup
 .cpan
 .cpanm
 .gem/
+NAS
+

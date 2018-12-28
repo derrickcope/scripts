@@ -56,20 +56,23 @@ spam/
       
 :0
 * ^X-Spambayes-Classification: unsure
-spam/
+other/
 
 :0 # Deliver to info file
 * ^TO_info@pilatesshanghai\.com
 info/
 
-:0 # Deliver to info file
+:0 # Deliver to me file
 * ^TO_derrick@thecopes\.me
 me/
 
-
-:0 # Deliver to inbox
+:0 # Deliver to derrick
 * ^TO_derrick@pilatesshanghai\.com
-inbox/
+derrick/
+
+:0 # ruby mail list
+* ^TO_ruby-talk@ruby-lang\.org
+other/
 
 #the rest
 :0

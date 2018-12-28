@@ -31,18 +31,17 @@ alias pacmir='sudo pacman -Syy'                    # Force refresh of all packag
 alias pacunlock="sudo rm /var/lib/pacman/db.lck"   # Delete the lock file /var/lib/pacman/db.lck
 alias paclock="sudo touch /var/lib/pacman/db.lck"  # Create the lock file /var/lib/pacman/db.lck
 
+# some utility aliases
+alias ll='ls -lh --color'
+alias ls='ls -Ah --color'
+alias la='ls -Ah --color'
+alias l='ls -CF --color'
+alias grep='rg'
 alias vim='nvim'
+alias vi='nvim'
 alias nv='nvim'
-alias snv='sudo -u derrick nvim'
-
-# for fzf
-#alias img='gpicview'
-#alias img='gpicview $(fzf --preview='timg -E -f1 -c1 -g $(( $COLUMNS / 2 - 4 ))x$(( $FZF_PREVIEW_HEIGHT * 2 )) {}')'
-
-# some more ls aliases
-alias ll='ls -lh'
-alias la='ls -Ah'
-alias l='ls -CF'
+alias snv='sudo nvim'
+alias cat='bat'
 
 alias cd..='cd ..'
 alias cd...='cd ../..'
