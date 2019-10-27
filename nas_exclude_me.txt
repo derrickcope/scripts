@@ -1,10 +1,11 @@
-.local/
-.cache/
+.local
+.cache
 .thumbnails
 .protonvpn-cli/
 lost+found
 scripts/.git
 .mutt/cache/
+.cargo
 .notmutt
 .bundle
 .rustup
@@ -43,3 +44,6 @@ perl5
 .thumbnails
 .getmail
 NAS
+iso
+build
+DROP

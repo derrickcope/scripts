@@ -1,6 +1,6 @@
-.local/
-.Cache/
-.cache/
+.local
+.Cache
+.cache
 .notmutt
 .thumbnails
 .protonvpn-cli/
@@ -19,6 +19,7 @@ scripts/.mutt
 .gimp/
 .sync/
 .config/google-chrome/
+.config/libreoffice
 .mozilla
 #mail
 .rakudobrew
@@ -30,4 +31,6 @@ perl5
 .cpanm
 .gem/
 NAS
-
+DROP
+build
+code/rust/rustcatcher/target
